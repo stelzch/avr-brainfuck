@@ -1,0 +1,239 @@
+gavrasm Gerd's AVR assembler version 4.4 (C)2019 by DG4FAC
+----------------------------------------------------------
+
+Path:        /home/armitage/
+Source file: Brainfuck.asm
+Hex file:    Brainfuck.hex
+Eeprom file: Brainfuck.eep
+Compiled:    17.11.2019, 22:09:53
+Pass:        2
+
+     1: ; Brainfuck Interpreter on ASM
+     2: .device atmega8
+     3: ; Initalize SRAM storage
+     4: .DEF CELL=r20
+     5: .DEF INSTR=r21
+     6: .EQU CELLS=0x60
+     7: 
+     8: ; Initialize Stack pointer
+     9: 000000   E50F  ldi r16, LOW(RAMEND)
+    10: 000001   BF0D  out SPL, r16
+    11: 000002   E014  ldi r17, HIGH(RAMEND)
+    12: 000003   BF1E  out SPH, r17
+    13: 
+    14: ; Initialize Cell (Y) pointer
+    15: 000004   E6C0  ldi YL, LOW(CELLS)
+    16: 000005   E0D0  ldi YH, HIGH(CELLS)
+    17: 
+    18: ; Initialize Instruction (Z) pointer
+    19: 000006   E0E0  ldi ZL, 0x00
+    20: 000007   E0F0  ldi ZH, 0x00
+    21: 
+    22: ; Overwrite all cells with 0
+    23: 000008   E000  ldi r16, 0x00
+    24: RESET_CELLS:
+    25: 000009   9309  st Y+, r16
+    26: 
+    27: 00000A   36CA  cpi YL, LOW(CELLS+10) ;LOW(CELLS+512)
+    28: 00000B   F7E9  brne RESET_CELLS
+    29: 00000C   30D0  cpi YH, HIGH(CELLS+10) ;HIGH(CELLS+512)
+    30: 00000D   F7D9  brne RESET_CELLS
+    31: 
+    32: 00000E   E6C0  ldi YL, LOW(CELLS)
+    33: 00000F   E0D0  ldi YH, HIGH(CELLS)
+    34: 
+    35: MAINLOOP:
+    36: 000010   D020  rcall LOAD_INSTR
+    37: 000011   D007  rcall LOAD_CELL
+    38: 000012   3050  cpi INSTR, 0x00 ; If reached end of program, terminate
+    39: 000013   F019  breq END
+    40: 
+    41: 000014   D039  rcall EXECUTE_INSTR
+    42: 000015   D019  rcall NEXT_INSTR
+    43: 000016   CFF9  rjmp MAINLOOP
+    44: 
+    45: 
+    46: 
+    47: END:
+    48: 000017   0000  nop
+    49: 000018   CFFE  rjmp END
+    50: 
+    51: LOAD_CELL:
+    52: 000019   8148  ld CELL, Y
+    53: 00001A   9508  ret
+    54: 
+    55: STORE_CELL:
+    56: 00001B   8348  st Y, CELL
+    57: 00001C   9508  ret
+    58: 
+    59: PREV_CELL:
+    60:     ; Decrement Y
+    61: 00001D   9721  sbiw YL:YH, 1
+    62: 
+    63:     ; Check for cell underflow
+    64: 00001E   35CF  cpi YL, LOW(CELLS-1)
+    65: 00001F   F421  brne PREV_CELL_EXIT
+    66: 000020   30D0  cpi YH, HIGH(CELLS-1)
+    67: 000021   F411  brne PREV_CELL_EXIT
+    68: 
+    69:     ; Y == CELLS - 1
+    70: 000022   E5CF  ldi YL, LOW(CELLS + 511)
+    71: 000023   E0D2  ldi YH, HIGH(CELLS + 511)
+    72:     PREV_CELL_EXIT:
+    73: 000024   9508  ret
+    74: 
+    75: NEXT_CELL:
+    76:     ; Increment Y
+    77: 000025   9621  adiw YL:YH, 1
+    78: 
+    79:     ; Check for cell overflow
+    80: 000026   36C0  cpi YL, LOW(CELLS+512)
+    81: 000027   F421  brne NEXT_CELL_EXIT
+    82: 000028   30D2  cpi YH, HIGH(CELLS+512)
+    83: 000029   F411  brne NEXT_CELL_EXIT
+    84: 
+    85:     ; Y == CELLS + 512
+    86: 00002A   E6C0  ldi YL, LOW(CELLS)
+    87: 00002B   E0D0  ldi YH, HIGH(CELLS)
+    88:     NEXT_CELL_EXIT:
+    89: 00002C   9508  ret
+    90: 
+    91: PREV_INSTR:
+    92:     ; Decrement Z
+    93: 00002D   9731  sbiw ZL:ZH, 1
+    94: 00002E   9508  ret
+    95: 
+    96: NEXT_INSTR:
+    97:     ; Increment Z
+    98: 00002F   9631  adiw ZL:ZH, 1
+    99: 000030   9508  ret
+   100: 
+   101: LOAD_INSTR:
+   102:     ; Wait until eeprom is ready
+   103: 000031   99E1  sbic EECR, EEWE
+   104: 000032   CFFE  rjmp LOAD_INSTR
+   105: 000033   BBFF  out EEARH, ZH
+   106: 000034   BBEE  out EEARL, ZL
+   107: 000035   9AE0  sbi EECR, EERE
+   108: 000036   B35D  in INSTR, EEDR
+   109: 000037   9508  ret
+   110: 
+   111: 
+   112: INCREMENT_CELL:
+   113: 000038   9543  inc CELL
+   114: 000039   DFE1  rcall STORE_CELL
+   115: 00003A   9508  ret
+   116: 
+   117: DECREMENT_CELL:
+   118: 00003B   954A  dec CELL
+   119: 00003C   DFDE  rcall STORE_CELL
+   120: 00003D   9508  ret
+   121: 
+   122: 
+   123: ; Now for the "tricky" bit: loops
+   124: SEEK_PAR_FWD:
+   125:     ; Assert that the current instruction is '[',
+   126:     ; continue to search the instructions until we find a closing parenthesis.
+   127:     ; Use register r17 to store the number of opened parenthesis
+   128: 00003E   E010  ldi r17, 0x00
+   129: 
+   130:     SEEK_PAR_FWD_LOOP:
+   131: 00003F   DFF1  rcall LOAD_INSTR
+   132: 
+   133:     ; Increment parenthesis counter on [
+   134: 000040   355B  cpi INSTR, '['
+   135: 000041   F409  brne PC+2
+   136: 000042   9513  inc r17
+   137: 
+   138:     ; Decrement parenthesis counter on ]
+   139: 000043   355D  cpi INSTR, ']'
+   140: 000044   F409  brne PC+2
+   141: 000045   951A  dec r17
+   142: 
+   143: 000046   3010  cpi r17, 0x00
+   144: 000047   F009  breq SEEK_PAR_FWD_EXIT   ; if we reached the matching bracket, exit the routine
+   145: 000048   DFE6  rcall NEXT_INSTR         ; otherwise look at the next instruction
+   146: 
+   147:     SEEK_PAR_FWD_EXIT:
+   148: 000049   9508  ret
+   149: 
+   150: OPENING_PAR:
+   151:     ; Compare if the current cell is != 0
+   152: 00004A   3040  cpi CELL, 0x00
+   153: 00004B   F409  brne PC+2
+   154: 00004C   DFF1  rcall SEEK_PAR_FWD       ; If the CELL == 0, go to the matching parenthesis
+   155: 00004D   9508  ret                      ; Return if cell is != zero
+   156: 
+   157: EXECUTE_INSTR:
+   158:     ; Execute the currently read instruction
+   159: 00004E   355B  cpi INSTR, '['
+   160: 00004F   F411  brne PC+3 ; Skip the next 3 instructions if not true
+   161: 000050   DFF9  rcall OPENING_PAR
+   162: 000051   9508  ret
+   163: 
+   164: 000052   355D  cpi INSTR, ']'
+   165: 000053   F001  breq PC+ 1
+   166: 
+   167: 000054   335C  cpi INSTR, '<'
+   168: 000055   F239  breq PREV_CELL
+   169: 
+   170: 000056   335E  cpi INSTR, '>'
+   171: 000057   F269  breq NEXT_CELL
+   172: 
+   173: 000058   325B  cpi INSTR, '+'
+   174: 000059   F2F1  breq INCREMENT_CELL
+   175: 
+   176: 00005A   325D  cpi INSTR, '-'
+   177: 00005B   F2F9  breq DECREMENT_CELL
+   178: 
+   179: 00005C   325E  cpi INSTR, '.'
+   180: 00005D   F001  breq PC+1
+   181: 
+   182: 00005E   325C  cpi INSTR, ','
+   183: 00005F   F001  breq PC+1
+   184: 000060   9508  ret
+   185: 
+   186: ; Initialize EEPROM
+   187: .eseg
+   188: .org 0x00
+   189: .db "[+++]+", 0x00
+        000000 5B 2B 2B 2B 5D 2B 00
+
+List of symbols:
+Type nDef nUsed             Decimalval           Hexval Name
+  T     1     1                      85               55 ATMEGA8
+  L     1     4                       9               09 RESET_CELLS
+  L     1     2                      16               10 MAINLOOP
+  L     1     4                      23               17 END
+  L     1     2                      25               19 LOAD_CELL
+  L     1     4                      27               1B STORE_CELL
+  L     1     2                      29               1D PREV_CELL
+  L     1     4                      36               24 PREV_CELL_EXIT
+  L     1     2                      37               25 NEXT_CELL
+  L     1     4                      44               2C NEXT_CELL_EXIT
+  L     1     0                      45               2D PREV_INSTR
+  L     1     4                      47               2F NEXT_INSTR
+  L     1     6                      49               31 LOAD_INSTR
+  L     1     2                      56               38 INCREMENT_CELL
+  L     1     2                      59               3B DECREMENT_CELL
+  L     1     2                      62               3E SEEK_PAR_FWD
+  L     1     0                      63               3F SEEK_PAR_FWD_LOOP
+  L     1     2                      73               49 SEEK_PAR_FWD_EXIT
+  L     1     2                      74               4A OPENING_PAR
+  L     1     2                      78               4E EXECUTE_INSTR
+  R     1     5                      20               14 CELL
+  R     1    12                      21               15 INSTR
+  C     1    14                      96               60 CELLS
+  C     1     0                      19               13 NOW_Y
+  C     1     0                      11               0B NOW_M
+  C     1     0                      17               11 NOW_D
+  C     1     0                   43786             AB0A NOW_I
+   No macros.
+
+Program             :       97 words.
+Constants           :        0 words.
+Total program memory:       97 words.
+Eeprom space        :        7 bytes.
+Data segment        :        0 bytes.
+Compilation completed, no errors.
+Compilation endet 17.11.2019, 22:09:53
