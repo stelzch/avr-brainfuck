@@ -85,13 +85,16 @@ LOAD_INSTR:
 
 
 ; Now for the "tricky" bit: loops
-SEEK_PAR_FWD:
-    ; Assert that the current instruction is '[',
-    ; continue to search the instructions until we find a closing parenthesis.
+SEEK_PAR:
+    ; Asserts we are currently sitting on a loop (Either [ or ])
+    ; Continue to search the instructions until we find a closing parenthesis
+    ; Expects one parameter in r16, that specifies the direction:
+    ; (0x00 = LEFT, 0xff = RIGHT)
     ; Use register r17 to store the number of opened parenthesis
+    mov r18, r16
     ldi r17, 0x00
 
-    SEEK_PAR_FWD_LOOP:
+    SEEK_PAR_LOOP:
     rcall LOAD_INSTR
 
     ; Increment parenthesis counter on [
@@ -105,38 +108,15 @@ SEEK_PAR_FWD:
     dec r17
 
     cpi r17, 0x00
-    breq SEEK_PAR_FWD_EXIT   ; if we reached the matching bracket, exit the routine
-    rcall NEXT_INSTR         ; otherwise look at the next instruction
-    rjmp SEEK_PAR_FWD_LOOP   ; and repeat this.
+    breq SEEK_PAR_EXIT   ; if we reached the matching bracket, exit the routine
+    sbrc r18, 0
+    rcall NEXT_INSTR         ; otherwise either look left
+    sbrs r18, 0
+    rcall PREV_INSTR         ; or right
 
-    SEEK_PAR_FWD_EXIT:
-    ret
+    rjmp SEEK_PAR_LOOP   ; and repeat this.
 
-SEEK_PAR_REV:
-    ; Assert that the current instruction is ']',
-    ; continue to search the instructions until we find a closing parenthesis.
-    ; Use register r17 to store the number of opened parenthesis
-    ldi r17, 0x00
-
-    SEEK_PAR_REV_LOOP:
-    rcall LOAD_INSTR
-
-    ; Increment parenthesis counter on ]
-    cpi INSTR, ']'
-    brne PC+2
-    inc r17
-
-    ; Decrement parenthesis counter on [
-    cpi INSTR, '['
-    brne PC+2
-    dec r17
-
-    cpi r17, 0x00
-    breq SEEK_PAR_REV_EXIT   ; if we reached the matching bracket, exit the routine
-    rcall PREV_INSTR         ; otherwise look at the next instruction
-    rjmp SEEK_PAR_REV_LOOP   ; and repeat this.
-
-    SEEK_PAR_REV_EXIT:
+    SEEK_PAR_EXIT:
     ret
 
 INCREMENT_CELL:
@@ -150,7 +130,7 @@ DECREMENT_CELL:
     ret
 
 OUTPUT:
-    rcall DELAY_100ms
+    ;rcall DELAY_100ms
     out PORTB, CELL
     ret
 
@@ -160,15 +140,17 @@ INPUT:
 
 EXECUTE_INSTR:
     ; Execute the currently read instruction
+    ; Push the return address to the stack
+    ldi r16, LOW(EXECUTE_INSTR_EXIT)
+    ldi r17, HIGH(EXECUTE_INSTR_EXIT)
+    push r16
+    push r17
+
     cpi INSTR, '['
-    brne PC+3 ; Skip the next 3 instructions if not true
-    rcall OPENING_PAR
-    ret
+    breq OPENING_PAR
 
     cpi INSTR, ']'
-    brne PC+3
-    rcall CLOSING_PAR
-    ret
+    breq CLOSING_PAR
 
     cpi INSTR, '<'
     breq PREV_CELL
@@ -187,20 +169,24 @@ EXECUTE_INSTR:
 
     cpi INSTR, ','
     breq INPUT
+
+    EXECUTE_INSTR_EXIT:
     ret
 
 OPENING_PAR:
     ; Compare if the current cell is != 0
     cpi CELL, 0x00
-    brne PC+2
-    rcall SEEK_PAR_FWD       ; If the CELL == 0, go to the matching parenthesis
-    ret                      ; Return if cell is != zero
+    brne PC+3
+    ldi r16, 0xff
+    rcall SEEK_PAR       ; If the CELL == 0, go to the matching parenthesis
+    ret                  ; Return if cell is != zero
 
 CLOSING_PAR:
     ; Compare if the current cell is != 0
     cpi CELL, 0x00
-    breq PC+2
-    rcall SEEK_PAR_REV
+    breq PC+3
+    ldi r16, 0x00
+    rcall SEEK_PAR
     ret
 
 PREV_CELL:
@@ -241,19 +227,19 @@ NEXT_CELL:
 ; Delay 100 000 cycles
 ; 100ms at 1.0 MHz
 
-DELAY_100ms:
-    ldi  r16, 130
-    ldi  r17, 222
-L1: dec  r17
-    brne L1
-    dec  r16
-    brne L1
-    nop
+;DELAY_100ms:
+;    ldi  r16, 130
+;    ldi  r17, 222
+;L1: dec  r17
+;    brne L1
+;    dec  r16
+;    brne L1
+;    nop
 
-    ret
+;    ret
 
 
 ; Initialize EEPROM
 .eseg
 .org 0x00
-.db "+[>+.<]", 0x00
+.db "[>+.<]+++++.", 0x00
