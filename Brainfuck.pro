@@ -1,11 +1,12 @@
 /avr_sim_project_file
-/home/armitage/Brainfuck.asm
+/home/armitage/Brainfuck/Brainfuck.asm
 mainasm=Brainfuck.asm
-file=Brainfuck.lst,1,1,1
-file=Brainfuck.asm,121,17,146
+file=Brainfuck.err,1,2,1
+file=Brainfuck.lst,66,43,90
+file=Brainfuck.asm,59,33,77
 clock=1000000
 device-type=ATmega8
 device-package=28-pin-PDIP
 device-number=59
 adc=5.0000,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000
-windows=acEpSt
+windows=acePSt
